@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry excluding="hr/apis_it/www/fin/_2012/services/fiskalizacijaservice/" kind="src" path="src"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
+	<classpathentry kind="lib" path="lib/saaj-api-2.2.1.jar"/>
+	<classpathentry kind="lib" path="lib/jaxb-api.jar"/>
+	<classpathentry kind="lib" path="lib/jaxb-impl.jar"/>
+	<classpathentry kind="lib" path="lib/saaj-impl-2.2.1.jar"/>
+	<classpathentry kind="lib" path="lib/xdx.jar"/>
+	<classpathentry kind="lib" path="lib/wstx-asl-3.2.9.jar"/>
+	<classpathentry kind="lib" path="lib/jsr173_1.0_api.jar"/>
+	<classpathentry kind="lib" path="lib/commons-codec-1.6.jar"/>
+	<classpathentry kind="lib" path="lib/xmlsec-1.4.5.jar"/>
+	<classpathentry combineaccessrules="false" kind="src" path="/spa-erp"/>
+	<classpathentry kind="output" path="classes"/>
+</classpath>

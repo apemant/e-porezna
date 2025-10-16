@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project basedir="." default="dist" name="fisbuilder">
+	<target name="init">
+		<property file="projbuilder.properties"/>
+		<path id="lib.classpath">
+			<fileset dir="${lib.dir}">
+				<include name="*.jar"/>
+			</fileset>
+			<pathelement path="${spa-erp.classes}"/>
+		</path>
+	</target>
+	
+	<target name="compile" depends="init" description="compiles project">
+		<mkdir dir="${classes.dir}"/>
+		<mkdir dir="${lib.dir}"/>
+		<depend srcdir="${src.dir}" destdir="${classes.dir}"/>
+		<javac 	fork="yes"
+			executable="${JAVA_COMPILER}"
+				destdir="${classes.dir}"
+				srcdir="${src.dir}"
+				classpathref="lib.classpath"
+				verbose="yes"
+				deprecation="true"
+				memorymaximumsize="${max.memory}"/>
+    <copy todir="${classes.dir}">
+        <fileset dir="${src.dir}" excludes="**/*.java"/>
+    </copy>
+	</target>
+	
+	<target name="dist" depends="jar">
+		<mkdir dir="fisdist/lib"/>
+		<copy todir="fisdist/lib">
+			<fileset dir="${lib.dir}">
+				<include name="*.jar"/>
+			</fileset>
+			<fileset dir="..">
+				<include name="fiskalizacija.jar"/>
+			</fileset>
+		</copy>
+	</target>
+	
+	<target name="jar" depends="compile" description="Makes jar file">
+		<jar basedir="${classes.dir}" jarfile="../zfiskalizacija.jar">
+			<manifest>
+				<attribute name="Main-Class" value="hr.restart.util.FisUtil"/>
+				<attribute name="Class-Path" value="commons-codec-1.6.jar jaxb-api.jar jaxb-impl.jar jsr173_1.0_api.jar saaj-api-2.2.1.jar saaj-impl-2.2.1.jar wstx-asl-3.2.9.jar xdx.jar xmlsec-1.4.5.jar"/>
+			</manifest>
+		</jar>
+	</target>
+	
+	<target name="clean" depends="init" description="Cleans classes.dir and deletes project.jar">
+		<delete dir="${classes.dir}"/>
+		<delete file="../zfiskalizacija.jar"/>
+		<delete dir="fisdist/lib"/>
+	</target>
+</project>

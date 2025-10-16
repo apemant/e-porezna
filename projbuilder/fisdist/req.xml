@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<tns:RacunZahtjev xmlns:tns="http://www.apis-it.hr/fin/2012/types/f73" xmlns:ns2="http://www.w3.org/2000/09/xmldsig#" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Id="signXmlId">
+    <tns:Zaglavlje>
+        <tns:IdPoruke>909de7ea-6aab-4ad8-966b-fb6141b55ac5</tns:IdPoruke>
+        <tns:DatumVrijeme>14.11.2012T16:06:50</tns:DatumVrijeme>
+    </tns:Zaglavlje>
+    <tns:Racun>
+        <tns:Oib>53204444499</tns:Oib>
+        <tns:USustPdv>true</tns:USustPdv>
+        <tns:DatVrijeme>14.11.2012T16:06:50</tns:DatVrijeme>
+        <tns:OznSlijed>N</tns:OznSlijed>
+        <tns:BrRac>
+            <tns:BrOznRac>666</tns:BrOznRac>
+            <tns:OznPosPr>P1</tns:OznPosPr>
+            <tns:OznNapUr>1</tns:OznNapUr>
+        </tns:BrRac>
+        <tns:Pdv>
+            <tns:Porez>
+                <tns:Stopa>25</tns:Stopa>
+                <tns:Osnovica>1000</tns:Osnovica>
+                <tns:Iznos>250</tns:Iznos>
+            </tns:Porez>
+        </tns:Pdv>
+        <tns:Pnp>
+            <tns:Porez>
+                <tns:Stopa>3</tns:Stopa>
+                <tns:Osnovica>10</tns:Osnovica>
+                <tns:Iznos>0.299999999999999988897769753748434595763683319091796875</tns:Iznos>
+            </tns:Porez>
+        </tns:Pnp>
+        <tns:Naknade>
+            <tns:Naknada>
+                <tns:NazivN>Povratna naknada</tns:NazivN>
+                <tns:IznosN>0.5</tns:IznosN>
+            </tns:Naknada>
+        </tns:Naknade>
+        <tns:IznosUkupno>1260.5</tns:IznosUkupno>
+        <tns:NacinPlac>G</tns:NacinPlac>
+        <tns:OibOper>23261401589</tns:OibOper>
+        <tns:ZastKod>1e8f4d7b35d77c501b46c3c023eed2b0</tns:ZastKod>
+        <tns:NakDost>false</tns:NakDost>
+    </tns:Racun>
+</tns:RacunZahtjev>

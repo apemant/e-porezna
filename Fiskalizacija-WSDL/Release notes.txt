@@ -1,0 +1,17 @@
+﻿Datum verzije: 05.11.2012.
+verzija: 1.1.1
+
+Promjene:
+	- u WSDL-u ispravljena greška - pogrešan url servisa u verziji 1.1
+
+----------------------------------------------------------------------------------------------------
+Datum verzije: 29.10.2012.
+verzija: 1.1
+
+Promjene:
+	- u elementima RacunOdgovor i PoslovniProstorOdgovor zamjenjen tip elementa ZaglavljeType u ZaglavljeOdgovorType, kojim sada dozvoljavamo da idPoruke bude bilo kakav string u du�ini od 0 - 36 znakova.
+	- promijenjen opis elementa <SpecNamj> u definiciji tipa <PoslovniProstorType>:
+				Potrebno je dostaviti jedan od podataka u nastavku:
+							- OIB pravne ili fizicke osobe koja je proizvela programsko rjesenje ili
+							- OIB pravne ili fizicke osobe koja odrzava programsko rjesenje ili
+							- OIB pravne ili fizicke osobe prodavatelja u slucaju da se koristi rjesenje od stranog proizvodaca – bez lokalnog partnera

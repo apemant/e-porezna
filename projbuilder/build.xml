@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project basedir="." default="jar" name="projbuilder">
+	<target name="init">
+		<property file="projbuilder.properties"/>
+		<path id="lib.classpath">
+			<fileset dir="${lib.dir}">
+				<include name="*.jar"/>
+			</fileset>
+			<pathelement path="${spa-erp.classes}"/>
+		</path>
+	</target>
+	
+	<target name="compile" depends="init" description="compiles project">
+		<mkdir dir="${classes.dir}"/>
+		<mkdir dir="${lib.dir}"/>
+		<depend srcdir="${src.dir}" destdir="${classes.dir}"/>
+		<javac 	fork="yes"
+			executable="${JAVA_COMPILER}"
+				destdir="${classes.dir}"
+				srcdir="${src.dir}"
+				classpathref="lib.classpath"
+				verbose="no"
+				deprecation="true"
+				memorymaximumsize="${max.memory}"/>
+    <copy todir="${classes.dir}">
+        <fileset dir="${src.dir}" excludes="**/*.java"/>
+    </copy>
+	</target>
+	
+	<!--target name="run" depends="compile" description="runs project">
+		<mkdir dir="${run.dir}"/>
+		<java 
+			fork="true"
+			classpath="${classes.dir}" 
+			classpathref="lib.classpath"
+			classname="${main.class}"
+			maxmemory="${max.memory}"
+			dir="${run.dir}"/>
+	</target-->
+	
+	<target name="jar" depends="compile" description="Makes jar file">
+		<jar basedir="${classes.dir}" jarfile="${project.jar}">
+			<manifest>
+<!--
+				<attribute name="Main-Class" value="${main.class}"/>
+-->
+				<attribute name="Class-Path" value="../lib/jax-qname.jar ../lib/jaxb-api.jar ../lib/jaxb-impl.jar ../lib/jaxb-libs.jar ../lib/namespace.jar ../lib/relaxngDatatype.jar ../lib/xsdlib.jar /Users/andrej/Documents/workspace/devel/projects/spa/thirdparty-jars/xdx.jar"/>
+			</manifest>
+		</jar>
+	</target>
+	<target name="fulljar" depends="jar" description="Makes jar file bundled with req jars from lib">
+		<delete dir="${classes.dir}.full"/>
+		<mkdir dir="${classes.dir}.full"/>
+		<unjar src="${lib.dir}/jax-qname.jar" dest="${classes.dir}.full"/>
+		<unjar src="${lib.dir}/jaxb-api.jar" dest="${classes.dir}.full"/>
+		<unjar src="${lib.dir}/jaxb-impl.jar" dest="${classes.dir}.full"/>
+  		<unjar src="${lib.dir}/jaxb-libs.jar" dest="${classes.dir}.full"/>
+		<unjar src="${lib.dir}/namespace.jar" dest="${classes.dir}.full"/>
+		<unjar src="${lib.dir}/relaxngDatatype.jar" dest="${classes.dir}.full"/>
+		<unjar src="${lib.dir}/xsdlib.jar" dest="${classes.dir}.full"/>
+		<unjar src="${project.jar}" dest="${classes.dir}.full"/>
+		<jar basedir="${classes.dir}.full" jarfile="../e-porezna-full.jar" manifest="../MANIFEST.MF"/>
+	</target>
+	<target name="clean" depends="init" description="Cleans classes.dir and deletes project.jar">
+		<delete dir="${classes.dir}"/>
+		<delete file="${project.jar}"/>
+	</target>
+</project>

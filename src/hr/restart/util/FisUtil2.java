@@ -1,0 +1,868 @@
+package hr.restart.util;
+
+import hr.apis_it.fin._2012.types.f73.*;
+
+import java.io.BufferedInputStream;
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.PrintStream;
+import java.io.StringWriter;
+import java.math.BigDecimal;
+import java.net.URL;
+import java.security.InvalidAlgorithmParameterException;
+import java.security.Key;
+import java.security.KeyManagementException;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
+import java.security.Signature;
+import java.security.cert.CertificateException;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
+import java.sql.Timestamp;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.StringTokenizer;
+import java.util.UUID;
+
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManagerFactory;
+import javax.xml.bind.JAXBContext;
+import javax.xml.bind.JAXBException;
+import javax.xml.bind.Marshaller;
+import javax.xml.bind.Unmarshaller;
+import javax.xml.crypto.dsig.CanonicalizationMethod;
+import javax.xml.crypto.dsig.DigestMethod;
+import javax.xml.crypto.dsig.Reference;
+import javax.xml.crypto.dsig.SignatureMethod;
+import javax.xml.crypto.dsig.SignedInfo;
+import javax.xml.crypto.dsig.Transform;
+import javax.xml.crypto.dsig.XMLSignature;
+import javax.xml.crypto.dsig.XMLSignatureFactory;
+import javax.xml.crypto.dsig.dom.DOMSignContext;
+import javax.xml.crypto.dsig.keyinfo.KeyInfo;
+import javax.xml.crypto.dsig.keyinfo.KeyInfoFactory;
+import javax.xml.crypto.dsig.keyinfo.X509Data;
+import javax.xml.crypto.dsig.keyinfo.X509IssuerSerial;
+import javax.xml.crypto.dsig.spec.C14NMethodParameterSpec;
+import javax.xml.crypto.dsig.spec.TransformParameterSpec;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.soap.MessageFactory;
+import javax.xml.soap.SOAPBody;
+import javax.xml.soap.SOAPConnection;
+import javax.xml.soap.SOAPConnectionFactory;
+import javax.xml.soap.SOAPEnvelope;
+import javax.xml.soap.SOAPMessage;
+import javax.xml.soap.SOAPPart;
+import javax.xml.transform.OutputKeys;
+import javax.xml.transform.Source;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
+
+import org.apache.commons.codec.digest.DigestUtils;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+
+import com.sun.xml.bind.marshaller.NamespacePrefixMapper;
+
+/**
+ * Klasa Signer za dodavanje potpisa na xml dokument. Sadrzi metodu za
+ * potpisivanje i slanje SOAP poruke putem SSL-a.
+ * 
+ * Koriste se klase iz JSR 105: XML Digital Signature API-a
+ * Koriste se klase iz SAAJ API-a za slanje SOAP poruka putem SSL-a
+ * Kirste se klase iz w3c DOM API-a
+ *
+ * @author Igor Cuncic igor.cuncic@gmail.com 
+ * adaptirao andrej@rest-art.hr
+ * odabrao Đelo H.
+ * tekst čitao ...
+ */
+
+public class FisUtil2 {
+    
+    public static String srvURL = System.getProperty("fisutil.SRVURL","https://cis.porezna-uprava.hr:8449/FiskalizacijaService"); 
+    public static String testSrvURL = "https://cistest.apis-it.hr:8449/FiskalizacijaServiceTest"; 
+    
+    
+    private static String contextClassName = "hr.apis_it.fin._2012.types.f73";
+    
+    private String certPath = "FISKAL_1.p12";
+    private String certPassword = "Gerber1317";
+    private String certType = "PKCS12";
+    private String certAlias = "cn=fiskal 1";
+    private String caCert = "cis.cer";
+    
+    private BigDecimal pdv = new BigDecimal(25);
+    private BigDecimal invp = new BigDecimal("0.2");
+    
+    private JAXBContext fiscontext;
+    private ObjectFactory fisfactory;
+    
+    private SSLContext fiskContext;
+    private KeyStore myCert;
+    
+    private DateFormat dateFormatter = new SimpleDateFormat("dd.MM.yyyy'T'HH:mm:ss");
+   
+    
+    public FisUtil2(String path, String pass, String type, String alias) {
+        System.out.println("Initializing FiskUtils");
+        try {
+            fiscontext = JAXBContext.newInstance(contextClassName);
+            
+        } catch (JAXBException e) {
+            System.err.println(e.getLocalizedMessage());
+        }
+        
+        if (path!=null) certPath = path;
+        if (pass!=null) certPassword = pass;
+        if (alias!=null) certAlias = alias;
+        if (type!=null) certType = type;
+        else if (certPath.endsWith(".jks")) certType = "JKS";
+        
+        System.out.println("Path = " + certPath);
+        System.out.println("Pass = " + "(hidden)");
+        System.out.println("Alias = " + certAlias);
+        System.out.println("Type = " + certType);
+        
+        fisfactory = new ObjectFactory();
+        
+        System.out.println("Initializing keystore");
+        try {
+            myCert = getKeyStore();
+        } catch (Exception e) {
+            System.err.println(e.getLocalizedMessage());
+        }
+        
+        System.out.println("Initializing SSL context");
+        initSSLContext();
+        
+        System.out.println("Finished initializing");
+    }
+    
+    public String getSrvURL() {
+      return srvURL;
+    }
+
+    public void setSrvURL(String srvURL) {
+      this.srvURL = srvURL;
+    }
+
+    public String getTestSrvURL() {
+      return testSrvURL;
+    }
+
+    public void setTestSrvURL(String testSrvURL) {
+      this.testSrvURL = testSrvURL;
+    }
+    
+    public String fiskaliziraj(RacunZahtjev zahtjev) {
+        String ZKI = "ZKI:"+generateZKI(zahtjev.getRacun());
+        String idPoruke = zahtjev.getZaglavlje().getIdPoruke().trim();
+        try {
+          RacunOdgovor odg;
+          Document doc = signJAXBDocument(zahtjev);
+//          System.out.println("****** P O T P I S A N I *****");
+//          fissigner.printDOM(new DOMSource(doc),new StreamResult(new FileOutputStream("signed.xml")));
+//          fissigner.printDOM(doc, System.out);
+//          System.out.println("****** E N D ");
+            SOAPMessage resp = sendSOAP(doc);
+            Document respdoc = resp.getSOAPBody().extractContentAsDocument();
+            //printDOM(respdoc, System.out);
+            odg = (RacunOdgovor)getUnmarshaller().unmarshal(respdoc);
+
+          if (checkResponse(idPoruke, odg)) {
+              System.out.println("no errors - returning Jir");
+            return odg.getJir();
+          }
+          //return "6b7749c6-56c1-4cf5-b7f7-9f29cebc9f7f";//iz primjera
+          //        e4d909c2-90d0-fb1c-a068-ffaddf22cbd0
+        } catch (Exception e) {
+            System.err.println(e.getLocalizedMessage());
+        }
+        return ZKI;
+      }
+    
+    public boolean checkResponse(String idPoruke, RacunOdgovor odg) {
+        String idOdg = "";
+        GreskeType greska = null;
+        List<GreskaType> greske = null;
+        
+        idOdg = ((RacunOdgovor)odg).getZaglavlje().getIdPoruke().trim();
+        greska = ((RacunOdgovor)odg).getGreske();
+        
+        if (idOdg.equals(idPoruke)) {
+          System.out.println("idPoruke matches - checking errors");
+          if (greska == null) {
+            //no errors
+            return true;
+          } else {
+            greske = greska.getGreska();
+          }
+          if (!greske.isEmpty()) {
+              System.err.println("********* FISKALIZACIJA: GREŠKE PRI SLANJU PORUKE U PU *********");
+              System.err.println("* TIP PORUKE: "+odg.getClass().getName());
+              System.err.println("* ID PORUKE: "+idPoruke);
+              System.err.println("* Greške:: \n*");
+            for (Iterator iterator = greske.iterator(); iterator.hasNext();) {
+              GreskaType greskaType = (GreskaType) iterator.next();
+              System.err.println("*    "+greskaType.getSifraGreske()+"   "+greskaType.getPorukaGreske());
+            }
+            System.err.println("*****************************************************************");
+            return false;
+          }
+        } else {
+          System.err.println("********* FISKALIZACIJA: GREŠKA: ID poruke i ID odgovora ne odgovaraju!!! ");
+          return false;
+        }
+        return true;
+      }
+    
+    public ObjectFactory getFisFactory() {
+      return fisfactory;
+    }
+    
+    public RacunZahtjev createRacunZahtjev(ZaglavljeType zaglavljeType, RacunType racunType) {
+        RacunZahtjev racunzahtjev = fisfactory.createRacunZahtjev();
+        racunzahtjev.setId("signXmlId");
+        racunzahtjev.setZaglavlje(zaglavljeType);
+        racunzahtjev.setRacun(racunType);
+     //....    
+        return racunzahtjev;
+      }
+    
+    public ZaglavljeType createZaglavlje(Timestamp datumVrijemeKreiranja, String uuidPoruke) {
+        ZaglavljeType zaglavlje = fisfactory.createZaglavljeType();
+        if (datumVrijemeKreiranja == null) datumVrijemeKreiranja = new Timestamp(System.currentTimeMillis());
+        zaglavlje.setDatumVrijeme(dateFormatter.format(datumVrijemeKreiranja));
+        if (uuidPoruke == null) uuidPoruke = UUID.randomUUID().toString();
+        zaglavlje.setIdPoruke(uuidPoruke);
+        return zaglavlje;
+    }
+    
+    public RacunType createRacun(String oib, boolean uSustavuPDV, Timestamp datVrijemeIzdavanja, String oznakaSlijednosti,
+        int brojrac, String oznPoslProstora, int oznNapUredjaja,
+        BigDecimal PDV_PP1, BigDecimal PDV_OSN1, BigDecimal PDV_IZN1,
+        BigDecimal PNP_PP1, BigDecimal PNP_OSN1, BigDecimal PNP_IZN1,
+        String nazivNaknade, BigDecimal NAK_IZN, 
+        BigDecimal UKUPNO, String nacinPlacanja, String oibOperatera, boolean naknadnaDostava) {
+      
+      RacunType racun = fisfactory.createRacunType();
+      
+      racun.setOib(oib);
+      
+      racun.setUSustPdv(uSustavuPDV);
+      
+      racun.setDatVrijeme(dateFormatter.format(datVrijemeIzdavanja));
+      
+      racun.setOznSlijed("P".equalsIgnoreCase(oznakaSlijednosti)?OznakaSlijednostiType.P:OznakaSlijednostiType.N);
+      
+      BrojRacunaType brojracuna = fisfactory.createBrojRacunaType();
+      brojracuna.setBrOznRac(Integer.toString(brojrac));
+      brojracuna.setOznPosPr(oznPoslProstora);
+      brojracuna.setOznNapUr(Integer.toString(oznNapUredjaja));
+      racun.setBrRac(brojracuna);
+      
+      if (PDV_OSN1!=null && PDV_OSN1.signum() != 0) {
+        PdvType pdv = fisfactory.createPdvType();
+        PorezType porez = fisfactory.createPorezType();
+        porez.setStopa(sc2(PDV_PP1));
+        porez.setOsnovica(sc2(PDV_OSN1));
+        porez.setIznos(sc2(PDV_IZN1));
+        pdv.getPorez().add(porez);
+        racun.setPdv(pdv);
+      }
+      
+      if (PNP_OSN1!=null && PNP_OSN1.signum() != 0) {
+        PorezNaPotrosnjuType pnp = fisfactory.createPorezNaPotrosnjuType();
+        PorezType porez = fisfactory.createPorezType();
+        porez.setStopa(sc2(PNP_PP1));
+        porez.setOsnovica(sc2(PNP_OSN1));
+        porez.setIznos(sc2(PNP_IZN1));
+        pnp.getPorez().add(porez);
+        racun.setPnp(pnp);
+      }
+      
+      if (NAK_IZN!=null && NAK_IZN.signum() != 0) {
+        NaknadeType naks = fisfactory.createNaknadeType();
+        NaknadaType nak = fisfactory.createNaknadaType();
+        nak.setNazivN(nazivNaknade==null?"Povratna naknada":nazivNaknade);
+        nak.setIznosN(sc2(NAK_IZN));
+        naks.getNaknada().add(nak);
+        racun.setNaknade(naks);
+      }
+      
+      racun.setIznosUkupno(sc2(UKUPNO));
+      
+      nacinPlacanja=nacinPlacanja==null?"O":nacinPlacanja;
+      racun.setNacinPlac(NacinPlacanjaType.fromValue(nacinPlacanja));
+      
+      racun.setOibOper(oibOperatera);
+      
+      racun.setZastKod(generateZKI(racun));
+      
+      racun.setNakDost(naknadnaDostava);
+      
+      return racun;
+    }
+
+    public RacunType createRacun(String oib, Timestamp datVrijemeIzdavanja, String oznakaSlijednosti, int brojrac,
+            String oznPoslProstora, int oznNapUredjaja, BigDecimal PDV_PP1, BigDecimal PDV_OSN1, BigDecimal PDV_IZN1,
+            BigDecimal UKUPNO, String nacinPlacanja, String oibOperatera) {
+
+        RacunType racun = fisfactory.createRacunType();
+
+        racun.setOib(oib);
+
+        racun.setUSustPdv(true);
+
+        if (datVrijemeIzdavanja == null) datVrijemeIzdavanja = new Timestamp(System.currentTimeMillis());
+        racun.setDatVrijeme(dateFormatter.format(datVrijemeIzdavanja));
+
+        racun.setOznSlijed("P".equalsIgnoreCase(oznakaSlijednosti) ? OznakaSlijednostiType.P : OznakaSlijednostiType.N);
+
+        BrojRacunaType brojracuna = fisfactory.createBrojRacunaType();
+        brojracuna.setBrOznRac(Integer.toString(brojrac));
+        brojracuna.setOznPosPr(oznPoslProstora);
+        brojracuna.setOznNapUr(Integer.toString(oznNapUredjaja));
+        racun.setBrRac(brojracuna);
+
+        if (PDV_OSN1 != null && PDV_OSN1.signum() != 0) {
+            PdvType pdv = fisfactory.createPdvType();
+            PorezType porez = fisfactory.createPorezType();
+            porez.setStopa(sc2(PDV_PP1));
+            porez.setOsnovica(sc2(PDV_OSN1));
+            porez.setIznos(sc2(PDV_IZN1));
+            pdv.getPorez().add(porez);
+            racun.setPdv(pdv);
+        }
+
+        racun.setIznosUkupno(sc2(UKUPNO));
+
+        nacinPlacanja = nacinPlacanja == null ? "O" : nacinPlacanja;
+        racun.setNacinPlac(NacinPlacanjaType.fromValue(nacinPlacanja));
+
+        racun.setOibOper(oibOperatera);
+
+        racun.setZastKod(generateZKI(racun));
+
+        racun.setNakDost(false);
+
+        return racun;
+    }
+
+    private BigDecimal sc2(BigDecimal b) {
+        return b.setScale(2, BigDecimal.ROUND_HALF_UP);
+    }
+
+    public String generateZKI(RacunType racun) {
+        String oib = racun.getOib();
+        String dv = racun.getDatVrijeme();
+        String bor = racun.getBrRac().getBrOznRac();
+        String opp = racun.getBrRac().getOznPosPr();
+        String onu = racun.getBrRac().getOznNapUr();
+        String uir = racun.getIznosUkupno().toPlainString();
+
+        return generateZKI(oib, dv, bor, opp, onu, uir);
+    }
+
+    private String generateZKI(String oib, String dv, String bor, String opp, String onu, String uir) {
+
+        byte[] pkb = null;
+
+        String mr = oib + dv + bor + opp + onu + uir;
+
+        try {
+            Key key = myCert.getKey(certAlias, certPassword.toCharArray());
+            Signature signer = Signature.getInstance("SHA256withRSA");
+            signer.initSign((PrivateKey) key);
+            signer.update(mr.getBytes());
+            pkb = signer.sign();
+//                pk = Base64.encode(key.getEncoded());
+        } catch (Exception e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+
+        return DigestUtils.md5Hex(pkb);
+    }
+    
+    /**
+     * Converts RacunZahtjev to w3c document and passes to signDocument  
+     * @param zahtjev RacunZahtjev
+     * @return signed w3c document
+     */
+    public Document signJAXBDocument(RacunZahtjev zahtjev) {
+      try {
+        StringWriter sw = new StringWriter();
+        getMarshaller().marshal(zahtjev, sw);
+        //debug
+        //System.out.println("**** SIGNING: ");
+        //System.out.println(sw);
+        //System.out.println("******** END");
+        return signStr(sw.toString());
+      } catch (Exception e) {
+        e.printStackTrace();
+      }
+      return null;
+    }
+    
+    private Document signStr(String s) throws Exception {
+      //konverzija ala idelac zlu netrebalo
+      String xmlString = normalize(s);
+//      System.out.println("**** NORMALIZED: ");
+//      System.out.println(xmlString);
+//      System.out.println("******** END");
+      InputStream is = new ByteArrayInputStream(xmlString.getBytes());
+      DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+      dbf.setNamespaceAware(true);
+      Document ret = dbf.newDocumentBuilder().parse(is);
+
+      fixId(ret.getFirstChild());
+      
+//      System.out.println("**** DOCUMENT: ");
+//      printDOM(ret, System.out);
+//      System.out.println("******** END");
+      return signDocument(ret);
+    }
+    
+    private Document getDoc(String s) throws Exception {
+      String xmlString = normalize(s);
+//    System.out.println("**** NORMALIZED: ");
+//    System.out.println(xmlString);
+//    System.out.println("******** END");
+      InputStream is = new ByteArrayInputStream(xmlString.getBytes());
+      DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+      dbf.setNamespaceAware(true);
+      return dbf.newDocumentBuilder().parse(is);
+    }
+    
+    private void fixId(Node n) {
+      if (n == null) return;
+      if (n.getNodeType() == n.ELEMENT_NODE)
+        fixId((Element) n);
+      fixId(n.getFirstChild());
+      fixId(n.getNextSibling());
+    }
+    private void fixId(Element e) {
+      String at = e.getAttribute("Id");
+      if (at != null && at.length() > 0)
+        e.setIdAttribute("Id", true);
+    }
+    
+  //konverzija ala idelac zlu netrebalo
+    public String normalize(String sxml) {
+      StringBuffer line = new StringBuffer();
+      char[] cxml = sxml.toCharArray();
+      String xmlString = "";
+      for (int i = 0; i < cxml.length; i++) {
+        if (cxml[i] == '\n' || cxml[i] == '\r') {
+          if (line.length() > 0) {
+            xmlString = xmlString+line.toString().trim();
+            line = new StringBuffer();
+          }
+          continue;
+        }
+        line.append(cxml[i]);
+      }
+      return xmlString;
+    }
+    /**
+     * Metoda za potpisivanje dokumenata. Koristi Java XMLSign API odnosno
+     * JSR105 api za digitalni potpis xml dokumenata.
+     * @param doc 
+     */
+    public Document signDocument(Document doc) {
+
+        try {
+            // Stvara DOM XMLSignatureFactory koji ce se koristiti za generiranje
+            // potpisa
+            //XMLSignatureFactory factory = XMLSignatureFactory.getInstance("DOM", new org.jcp.xml.dsig.internal.dom.XMLDSigRI()); //1.5
+            XMLSignatureFactory factory = XMLSignatureFactory.getInstance("DOM"); //1.6+
+
+            // SHA1 Vrsta digest alogritma za potpisivanje dokumenta
+            DigestMethod digestMethod = factory.newDigestMethod(DigestMethod.SHA256, null);
+
+            /* Transformacija - oznacava vrstu transformacije digitalnog potpisa. U ovom 
+             * slucaju generira se:
+             * algoritam transformacije za enveloped potpis 
+             http://en.wikipedia.org/wiki/XML_Signature 
+             * alogirtam kanokalizacije na exclusive xml without comments
+             http://www.w3.org/TR/xml-exc-c14n/ */
+            List<Transform> transformList = new ArrayList<Transform>();
+            TransformParameterSpec tps = null;
+            Transform envelopedTransform;
+            try {
+                envelopedTransform = factory.newTransform(Transform.ENVELOPED,
+                        tps);
+                Transform c14NTransform = factory.newTransform(
+                        "http://www.w3.org/2001/10/xml-exc-c14n#", tps);
+
+                transformList.add(envelopedTransform);
+                transformList.add(c14NTransform);
+            } catch (NoSuchAlgorithmException e) {
+                throw new RuntimeException("Erro inesperado: " + e.getMessage(), e);
+            } catch (InvalidAlgorithmParameterException e) {
+                throw new RuntimeException("Erro inesperado: " + e.getMessage(), e);
+            }
+
+            /* Reference određuje na koji element unutar xml se generira DigestValue, dodjeljuje mu se preko prametara
+             algoritam digesta i transformacija
+             */
+//            Reference reference = factory.newReference("#RacunZahtjeva", digestMethod, transformList, null, null);
+//            Reference reference = factory.newReference("#RacunZahtjev", digestMethod, transformList, null, null);
+            Reference reference = factory.newReference("#signXmlId", digestMethod, transformList, null, null);
+
+            /* Popunjava element CanonnicalizationMathod s definiranim algoritmom */
+            CanonicalizationMethod canonicalizationMethod = factory.newCanonicalizationMethod(CanonicalizationMethod.EXCLUSIVE, (C14NMethodParameterSpec) null);
+
+            /* Popunjava element SignatureMethod algoritmom za digest 
+             * Primjer:
+             <SignedInfo>
+             <CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+             <SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>
+             <Reference URI="#RacunZahtjev">
+             <Transforms>
+             <Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>
+             <Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+             </Transforms>
+             <DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>
+             <DigestValue>VItfxY/A1BITZ/BuWpsGd9gKix4=</DigestValue>
+             </Reference>
+             </SignedInfo>*/
+            SignatureMethod signatureMethod = factory.newSignatureMethod("http://www.w3.org/2001/04/xmldsig-more#rsa-sha256", null);
+            SignedInfo signedInfo = factory.newSignedInfo(canonicalizationMethod, signatureMethod, Collections.singletonList(reference));
+
+            // Ucitava kljuceve i certifikat iz keystora
+//            KeyStore ks = KeyStore.getInstance("JKS");
+//            ks.load(new FileInputStream("democert.jks"), "password".toCharArray());
+
+            //KeyStore ks = getKeyStore();
+            
+            /*
+            Enumeration als = ks.aliases();
+            String alias = (String) als.nextElement();
+            while (alias.equalsIgnoreCase(FisUtil.getMyKey()) || alias.equalsIgnoreCase("fiskalcis")) 
+              alias = (String) als.nextElement();*/
+
+            // Dohvaca privatni kljuc za potpisivanje xml-a
+            KeyStore.PrivateKeyEntry keyEntry =
+                    (KeyStore.PrivateKeyEntry) myCert.getEntry(certAlias, new KeyStore.PasswordProtection(certPassword.toCharArray()));
+            // Dohvaca informacije o certifikatu koji se nalazi u kljucu
+            X509Certificate cert = (X509Certificate) keyEntry.getCertificate();
+
+            // KeyInfoFactory dohvaca informacije o kljucu kao sto su issuer, cer. serial itd
+            KeyInfoFactory keyInfoFactory = factory.getKeyInfoFactory();
+
+            X509IssuerSerial ser = keyInfoFactory.newX509IssuerSerial(cert.getIssuerX500Principal().getName(), cert.getSerialNumber());
+            /* Stvara se lista u kojoj ce se nalazit info o certifikatu i serijskom broju
+             * Primjer:
+             * <X509IssuerSerial>
+             *      <X509IssuerName>OU=DEMO,O=FINA,C=HR</X509IssuerName>
+             *      <X509SerialNumber>1234567890</X509SerialNumber>
+             * </X509IssuerSerial>
+             */
+            List x509 = new ArrayList();
+            x509.add(cert);
+            x509.add(ser);
+            X509Data x509Data = keyInfoFactory.newX509Data(x509);
+
+            /* Listom se dodaje unutar elementa KeyInfo element X509Data s popunjenim podatcima 
+             * Primjer:
+             <KeyInfo>
+                <X509Data>
+                    <X509Certificate>MIIEyDCCA7CgAwIBAgIEPssQ2TANBgkqh...</X509Certificate>
+                    <X509IssuerSerial>
+                        <X509IssuerName>OU=DEMO,O=FINA,C=HR</X509IssuerName>
+                        <X509SerialNumber>1053495513</X509SerialNumber>
+                    </X509IssuerSerial>
+                </X509Data>
+             </KeyInfo>                     */
+            List items = new ArrayList();
+            items.add(x509Data);
+            KeyInfo ki = keyInfoFactory.newKeyInfo(items);
+// ai: ovo je sve manje potrebno jer dokument dobivamo iz JAXBElementa na foru vuk-lisica
+//            /*
+//             * Stvara se dokument factory u kojeg ce se ucitati XML
+//             */
+//            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+//            dbf.setNamespaceAware(true);
+//            /*
+//             * Dio koda preuzet sa stranice http://fiskalizacija.codeplex.com/discussions/404204
+//             * od korisnika idelac.
+//             * Kod ucitava XML u String i uklanja prazan prostor "whitespace" unutar xml dokumenta
+//             */
+//            String thisLine = "";
+//            String xmlString = "";
+//            BufferedReader br = new BufferedReader(new FileReader("c:\\file.xml"));
+//            br.readLine();
+//            while ((thisLine = br.readLine()) != null) {
+//                xmlString = xmlString + thisLine.trim();
+//            }
+//            br.close();
+//            /*
+//             * Kreira se ByteArrayInputStream od Stringa koji predstavlja xml podatke
+//             */
+//            ByteArrayInputStream xmlStream = new ByteArrayInputStream(xmlString.getBytes());
+//            /*
+//             * Stvaranj xml Dokumenta iz stream-a
+//             */
+//            Document doc = dbf.newDocumentBuilder().parse(xmlStream);
+
+            /*
+             * Priprema dokumenta za digitalan potpis
+             */
+            DOMSignContext dsc = new DOMSignContext(keyEntry.getPrivateKey(), doc.getDocumentElement());
+            /*
+             * Stvaranje digitalnog potpisa pomocu kljuca i prethodno definiranih podataka 
+             * (kanonikalizacija, algoritmi, digest, referenca itd.)
+             */
+            XMLSignature signature = factory.newXMLSignature(signedInfo, ki);
+
+            /*
+             * Potpisivanje xml dokumenta
+             */
+            signature.sign(dsc);
+            /*
+             * Slanje potpisanog dokumenta metodom sendSOAP(doc) 
+             */
+           // sendSOAP(doc);
+            return doc;
+
+        } catch (Exception ex) {
+          ex.printStackTrace();
+        }
+        return null;
+    }
+    /**
+     * Metoda koja salje SOAP poruku CIS WS-u putem SSL-a
+     * 
+     * @param doc Potpisani XML dokument kojeg saljem SOAP-SSLom
+     */
+    public SOAPMessage sendSOAP(Document doc) {
+        try {
+            /*
+             * Dio koda preuzet s http://blog.hexican.com/2010/12/sending-soap-messages-through-https-using-saaj/
+             */
+//            System.setProperty("javax.net.ssl.keyStore", "democert.jks");
+//            System.setProperty("javax.net.ssl.keyStorePassword", "password");
+//            System.setProperty("javax.net.ssl.keyStoreType", "JKS");
+          
+          
+            //System.setProperty("java.protocol.handler.pkgs", "com.sun.net.ssl.internal.www.protocol");
+            //Security.addProvider(new com.sun.net.ssl.internal.ssl.Provider());
+
+            //First create the connection
+            SOAPConnectionFactory soapConnFactory = SOAPConnectionFactory.newInstance();
+            SOAPConnection connection = soapConnFactory.createConnection();
+
+            //Next, create the actual message
+            MessageFactory messageFactory = MessageFactory.newInstance();
+            SOAPMessage message = messageFactory.createMessage();
+
+            // Create objects for the message parts
+            SOAPPart soapPart = message.getSOAPPart();
+            SOAPEnvelope envelope = soapPart.getEnvelope();
+            SOAPBody body = envelope.getBody();
+//            envelope = soapPart.getEnvelope();
+            // Micanje header-a iz poruke
+            envelope.getHeader().detachNode();
+//            body = envelope.getBody();
+            
+            //Populate the Message
+//            DocumentBuilderFactory dbFactory = DocumentBuilderFactory.newInstance();
+//            dbFactory.setNamespaceAware(true);
+            
+            // Dodaje potpisani XML u body SOAP-a
+//            body.addNamespaceDeclaration("ns2", "http://www.w3.org/2000/09/xmldsig#");
+//            body.addNamespaceDeclaration("tns", "http://www.apis-it.hr/fin/2012/types/f73");
+            envelope.addNamespaceDeclaration("xsd", "http://www.w3.org/2001/XMLSchema");
+            envelope.addNamespaceDeclaration("xsi", "http://www.w3.org/2001/XMLSchema-instance");
+//            ((CoreDocumentImpl)body.getOwnerDocument()).setErrorChecking(false);
+            body.addDocument(doc);
+//            System.err.println(
+//                body.getFirstChild().getNodeName()
+//                );
+//            ((SOAPElement)body.getFirstChild()).addNamespaceDeclaration("tns", "http://www.apis-it.hr/fin/2012/types/f73");
+            message.saveChanges();
+
+            // Check the input
+            System.out.println("\nREQUEST:\n");
+//            message.writeTo(System.out);
+            message.writeTo(new FileOutputStream("soap.xml"));
+//            System.out.println();
+
+            //Set the destination
+//            URL destination = new URL("https://cistest.apis-it.hr:8449/FiskalizacijaServiceTest");
+            URL destination = new URL(srvURL);
+            
+            // switch ssl context to our trusted site
+            SSLContext defContext = SSLContext.getDefault();
+            try {
+                
+                SSLContext.setDefault(fiskContext);
+                //  Send the message
+                SOAPMessage reply = connection.call(message, destination);
+            
+                return reply;
+            } finally {
+                SSLContext.setDefault(defContext);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+    
+    public KeyStore getKeyStore() throws NoSuchAlgorithmException, KeyStoreException, CertificateException, IOException {
+        KeyStore keyStore = KeyStore.getInstance(certType);
+        keyStore.load(new FileInputStream(findFileAnywhere(certPath)), certPassword.toCharArray());
+        return keyStore;
+    }
+    
+    private void initSSLContext() {
+        try {
+            X509Certificate ca = (X509Certificate) CertificateFactory.getInstance("X.509")
+                                    .generateCertificate(new BufferedInputStream(
+                                        new FileInputStream(findFileAnywhere(caCert))));
+
+            KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
+            ks.load(null, null);
+            ks.setCertificateEntry(Integer.toString(1), ca);
+            
+            File prev = findFileAnywhere(caCert + ".prev");
+            if (prev != null) {
+              System.out.println("Adding previous certificate...");
+              X509Certificate caprev = (X509Certificate) CertificateFactory.getInstance("X.509")
+                  .generateCertificate(new BufferedInputStream(new FileInputStream(prev)));
+              ks.setCertificateEntry(Integer.toString(2), caprev);
+            }
+
+            TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            tmf.init(ks);
+
+            fiskContext = SSLContext.getInstance("TLS");
+            fiskContext.init(null, tmf.getTrustManagers(), null);
+
+        } catch (KeyManagementException e) {
+            System.err.println(e.getLocalizedMessage());
+        } catch (CertificateException e) {
+            System.err.println(e.getLocalizedMessage());
+        } catch (KeyStoreException e) {
+            System.err.println(e.getLocalizedMessage());
+        } catch (NoSuchAlgorithmException e) {
+            System.err.println(e.getLocalizedMessage());
+        } catch (IOException e) {
+            System.err.println(e.getLocalizedMessage());
+        }
+    }
+    
+    
+    
+    public void printDOM(Document doc, PrintStream out) {
+      printDOM(new DOMSource(doc), out);
+    }
+    public void printDOM(Source src, PrintStream out) {
+      printDOM(src, new StreamResult(out));
+    }
+    public void printDOM(Source src, StreamResult srout) {
+      Transformer transformer;
+      try {
+        transformer = TransformerFactory.newInstance().newTransformer();
+        //
+        transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
+        transformer.setOutputProperty(OutputKeys.METHOD, "xml");
+        transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+        transformer.setOutputProperty(OutputKeys.ENCODING, "UTF-8");
+        transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "4");
+        //
+        transformer.transform(src, srout);
+      } catch (Exception e) {
+        e.printStackTrace();
+      }
+    }
+    
+    private Marshaller fismarshaller;
+    public Marshaller getMarshaller() {
+      if (fismarshaller == null) {
+        try {
+          fismarshaller = fiscontext.createMarshaller();
+          fismarshaller.setProperty( Marshaller.JAXB_FORMATTED_OUTPUT, Boolean.TRUE );
+          fismarshaller.setProperty("com.sun.xml.bind.namespacePrefixMapper", new NamespacePrefixMapper() {
+            
+            @Override
+            public String getPreferredPrefix(String namespaceUri, String suggestion,
+                boolean requirePrefix) {
+              if (namespaceUri.equals("http://www.apis-it.hr/fin/2012/types/f73")) return "tns";
+              if (namespaceUri.equals("http://www.w3.org/2001/XMLSchema-instance")) return "xsi";
+              return suggestion;
+            }
+          });
+        } catch (Exception e) {
+          // TODO Auto-generated catch block
+          e.printStackTrace();
+          fismarshaller = null;
+        }
+      }
+      return fismarshaller;
+    }
+    
+    public File[] getClassPath() {
+      StringTokenizer st = new StringTokenizer(System.getProperty("java.class.path"), System.getProperty("path.separator"));
+      HashSet cps = new HashSet();
+      int i = 0;
+      while (st.hasMoreTokens()) {
+        String tok = st.nextToken();
+        File f = new File(tok);
+        cps.add(f.isDirectory() ? f : f.getParentFile());
+      }
+      return (File[]) cps.toArray(new File[cps.size()]);
+    }
+    
+    public File getCurrentDirectory() {
+      return new File(System.getProperty("user.dir"));
+    }
+
+    public File getHomeDirectory() {
+      return new File(System.getProperty("user.home"));
+    }
+    
+    public File findFileAnywhere(String name) {
+      File f = new File(getCurrentDirectory(), name);
+      if (f.exists()) return f;
+      f = new File(getHomeDirectory(), name);
+      if (f.exists()) return f;
+      File[] cp = getClassPath();
+      for (int i = 0; i < cp.length; i++)
+        if (cp[i] != null && cp[i].exists()) {
+          f = new File(cp[i], name);
+          if (f.exists()) return f;
+        }
+      return null;
+    }
+    
+    private Unmarshaller fisunmarshaller;
+    public Unmarshaller getUnmarshaller() {
+      if (fisunmarshaller == null) {
+        try {
+          fisunmarshaller = fiscontext.createUnmarshaller();
+        } catch (Exception e) {
+          // TODO: handle exception
+        }
+      }
+      return fisunmarshaller;
+    }
+}
